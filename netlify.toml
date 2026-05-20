@@ -3,6 +3,9 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[build.environment]
+  GROQ_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+
 [dev]
   command = "npm run vite"
   port = 8888
