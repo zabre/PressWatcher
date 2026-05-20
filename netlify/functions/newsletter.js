@@ -10,6 +10,13 @@ export async function handler(event) {
       return response(400, { error: "Client et articles requis." });
     }
 
+    const clientApiKey = event.headers["x-groq-api-key"] || event.headers["authorization"];
+    const apiKey = clientApiKey ? (clientApiKey.startsWith("Bearer ") ? clientApiKey.substring(7) : clientApiKey) : process.env.GROQ_API_KEY;
+
+    if (!apiKey) {
+      return response(400, { error: "Clé API Groq manquante. Veuillez la configurer dans l'application." });
+    }
+
     const prompt = `
 Tu es consultant senior en veille presse.
 
@@ -33,7 +40,7 @@ ${JSON.stringify(items, null, 2)}
     const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+        "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
