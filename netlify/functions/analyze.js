@@ -17,31 +17,27 @@ export async function handler(event) {
  return response(400, { error: "Clé API Groq manquante. Veuillez la configurer dans l'application." });
  }
 
- const prompt = `
-Tu es un analyste de veille presse.
+ const prompt = `Tu es un analyste en veille presse. Analyse cette capture d'article de presse pour le client "${client}".
+Contexte : ${context || "Non précisé"}.
 
-Client : ${client}
-Contexte : ${context || "Non précisé"}
+Tâches :
+1. Lis attentivement le texte de l'article sur l'image.
+2. Identifie le titre réel de l'article, la source (nom du journal) et la date.
+3. Résume l'article en 2 à 3 phrases claires.
+4. Évalue la pertinence (forte, moyenne ou faible) et l'angle pour le client.
 
-Analyse cette capture d'article de presse.
-Consignes :
-- Sois très concis et synthétique.
-- Si une info est illisible, mets "non détecté".
-- Réponds UNIQUEMENT avec un objet JSON brut, sans texte avant ou après.
-
-Format JSON obligatoire :
+RÈGLE ABSOLUE : Réponds UNIQUEMENT avec un objet JSON valide, sans balises de pensée, sans markdown, au format :
 {
- "titre": "titre de l'article",
- "source": "nom du média",
- "date": "date ou non détecté",
- "sujet": "sujet principal en une phrase",
- "resume": "synthèse en 2 ou 3 phrases courtes",
- "pertinence_client": "forte",
- "angle_client": "explication courte",
- "qualite_lecture": "bonne",
+ "titre": "",
+ "source": "",
+ "date": "",
+ "sujet": "",
+ "resume": "",
+ "pertinence_client": "forte|moyenne|faible",
+ "angle_client": "",
+ "qualite_lecture": "bonne|moyenne|faible",
  "points_a_verifier": []
-}
-`;
+}`;
 
  const modelName = process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b";
 
@@ -60,7 +56,7 @@ Format JSON obligatoire :
  body: JSON.stringify({
  model: modelName,
  temperature: 0.1,
- max_completion_tokens: 750,
+ max_completion_tokens: 1200,
  messages: [
  {
  role: "user",
@@ -75,7 +71,6 @@ Format JSON obligatoire :
 
  groqData = await groqRes.json();
 
- // Si erreur 429 (Rate limit)
  if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
  if (attempts < maxAttempts) {
  const retryAfter = parseInt(groqRes.headers.get("retry-after") || "5", 10);
@@ -88,15 +83,17 @@ Format JSON obligatoire :
  }
 
  if (groqData?.error) {
- const errMsg = groqData.error.message || JSON.stringify(groqData.error);
  return response(500, {
- error: `Erreur Groq API: ${errMsg}`
+ error: `Erreur Groq API: ${groqData.error.message || JSON.stringify(groqData.error)}`
  });
  }
 
- const raw = groqData?.choices?.[0]?.message?.content || "{}";
+ let raw = groqData?.choices?.[0]?.message?.content || "{}";
 
- // Extraction robuste du JSON même si entouré de balises markdown ou de texte
+ // 1. SUPPRIMER LE BLOC DE PENSÉE <think>...</think> GÉNÉRÉ PAR QWEN
+ raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+
+ // 2. EXTRAIRE LE BLOC JSON
  let jsonMatch = raw.match(/\{[\s\S]*\}/);
  let cleaned = jsonMatch ? jsonMatch[0] : raw;
 
