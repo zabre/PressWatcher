@@ -48,6 +48,15 @@ Retourne uniquement un JSON valide avec ce format exact :
 }
 `;
 
+ const modelName = process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b";
+
+ // Gestion du retry avec délai en cas de Rate Limit (Erreur 429)
+ let groqData = null;
+ let attempts = 0;
+ const maxAttempts = 3;
+
+ while (attempts < maxAttempts) {
+ attempts++;
  const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
  method: "POST",
  headers: {
@@ -55,33 +64,34 @@ Retourne uniquement un JSON valide avec ce format exact :
  "Content-Type": "application/json"
  },
  body: JSON.stringify({
- model: process.env.GROQ_MODEL || "qwen/qwen3.6-27b",
+ model: modelName,
  temperature: 0.2,
  response_format: { type: "json_object" },
  messages: [
  {
  role: "user",
  content: [
- {
- type: "text",
- text: prompt
- },
- {
- type: "image_url",
- image_url: {
- url: image
- }
- }
+ { type: "text", text: prompt },
+ { type: "image_url", image_url: { url: image } }
  ]
  }
  ]
  })
  });
 
- const groqData = await groqRes.json();
+ groqData = await groqRes.json();
 
- // Remonte l'erreur explicite de Groq si l'appel échoue
- if (groqData.error) {
+ // Si erreur de rate limit (429), on attend 2.5 secondes puis on réessaie
+ if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
+ if (attempts < maxAttempts) {
+ await new Promise((resolve) => setTimeout(resolve, 2500));
+ continue;
+ }
+ }
+ break;
+ }
+
+ if (groqData?.error) {
  return response(500, {
  error: "Erreur Groq API",
  details: groqData.error.message || JSON.stringify(groqData.error)
