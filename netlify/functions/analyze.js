@@ -17,33 +17,29 @@ export async function handler(event) {
  return response(400, { error: "Clé API Groq manquante. Veuillez la configurer dans l'application." });
  }
 
- const prompt = `Tu es un analyste en veille presse. Analyse cette capture d'article de presse pour le client "${client}".
+ const prompt = `Tu es analyste veille presse. Analyse cette image d'article pour le client "${client}".
 Contexte : ${context || "Non précisé"}.
 
-Tâches :
-1. Lis attentivement le texte de l'article sur l'image.
-2. Identifie le titre réel de l'article, la source (nom du journal) et la date.
-3. Résume l'article en 2 à 3 phrases claires.
-4. Évalue la pertinence (forte, moyenne ou faible) et l'angle pour le client.
-
-RÈGLE ABSOLUE : Réponds UNIQUEMENT avec un objet JSON valide, sans balises de pensée, sans markdown, au format :
+TÂCHE : Extrais les informations réelles de l'image.
+Réponds EXCLUSIVEMENT avec un JSON brut valide, sans balise de code, sans aucun texte autour :
 {
- "titre": "",
- "source": "",
- "date": "",
- "sujet": "",
- "resume": "",
- "pertinence_client": "forte|moyenne|faible",
- "angle_client": "",
- "qualite_lecture": "bonne|moyenne|faible",
+ "titre": "vrai titre extrait de l'article",
+ "source": "nom du média ou non détecté",
+ "date": "date ou non détecté",
+ "sujet": "sujet principal",
+ "resume": "résumé en 2 phrases simples",
+ "pertinence_client": "forte",
+ "angle_client": "explication courte",
+ "qualite_lecture": "bonne",
  "points_a_verifier": []
 }`;
 
- const modelName = process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b";
+ // meta-llama/llama-4-scout-17b-16e-instruct : Pas de pensées <think>, pas de tronquage
+ const modelName = "meta-llama/llama-4-scout-17b-16e-instruct";
 
  let groqData = null;
  let attempts = 0;
- const maxAttempts = 4;
+ const maxAttempts = 3;
 
  while (attempts < maxAttempts) {
  attempts++;
@@ -56,7 +52,6 @@ RÈGLE ABSOLUE : Réponds UNIQUEMENT avec un objet JSON valide, sans balises de 
  body: JSON.stringify({
  model: modelName,
  temperature: 0.1,
- max_completion_tokens: 1200,
  messages: [
  {
  role: "user",
@@ -73,9 +68,7 @@ RÈGLE ABSOLUE : Réponds UNIQUEMENT avec un objet JSON valide, sans balises de 
 
  if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
  if (attempts < maxAttempts) {
- const retryAfter = parseInt(groqRes.headers.get("retry-after") || "5", 10);
- const waitTime = Math.max(retryAfter * 1000, attempts * 4000);
- await new Promise((resolve) => setTimeout(resolve, waitTime));
+ await new Promise((resolve) => setTimeout(resolve, 3000));
  continue;
  }
  }
@@ -90,12 +83,13 @@ RÈGLE ABSOLUE : Réponds UNIQUEMENT avec un objet JSON valide, sans balises de 
 
  let raw = groqData?.choices?.[0]?.message?.content || "{}";
 
- // 1. SUPPRIMER LE BLOC DE PENSÉE <think>...</think> GÉNÉRÉ PAR QWEN
- raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+ // Nettoyage Markdown
+ raw = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
 
- // 2. EXTRAIRE LE BLOC JSON
- let jsonMatch = raw.match(/\{[\s\S]*\}/);
- let cleaned = jsonMatch ? jsonMatch[0] : raw;
+ // Extraction du JSON
+ const firstBrace = raw.indexOf("{");
+ const lastBrace = raw.lastIndexOf("}");
+ let cleaned = (firstBrace !== -1 && lastBrace !== -1) ? raw.substring(firstBrace, lastBrace + 1) : raw;
 
  let parsed;
  try {
