@@ -37,8 +37,8 @@ Articles :
 ${JSON.stringify(items, null, 2)}
 `;
 
- // Utilisation de llama-3.1-8b-instant pour éviter les rate limits du tier gratuit
- const modelName = process.env.GROQ_TEXT_MODEL || "llama-3.1-8b-instant";
+ // openai/gpt-oss-20b : modèle texte standard actuel sur Groq (gratuit et ultra-rapide)
+ const modelName = process.env.GROQ_TEXT_MODEL || "openai/gpt-oss-20b";
 
  let groqData = null;
  let attempts = 0;
@@ -68,7 +68,7 @@ ${JSON.stringify(items, null, 2)}
 
  if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
  if (attempts < maxAttempts) {
- await new Promise((resolve) => setTimeout(resolve, 2000));
+ await new Promise((resolve) => setTimeout(resolve, 3000));
  continue;
  }
  }
@@ -76,9 +76,10 @@ ${JSON.stringify(items, null, 2)}
  }
 
  if (groqData?.error) {
+ // On retourne le message d'erreur précis pour que le frontend ou l'utilisateur le voie
+ const errMsg = groqData.error.message || JSON.stringify(groqData.error);
  return response(500, {
- error: "Erreur Groq API",
- details: groqData.error.message || JSON.stringify(groqData.error)
+ error: `Erreur Groq API: ${errMsg}`
  });
  }
 
@@ -87,8 +88,7 @@ ${JSON.stringify(items, null, 2)}
  return response(200, { newsletter });
  } catch (error) {
  return response(500, {
- error: "Erreur newsletter",
- details: error.message
+ error: `Erreur newsletter: ${error.message}`
  });
  }
 }
