@@ -18,32 +18,27 @@ export async function handler(event) {
  }
 
  const prompt = `
-Tu es un analyste de veille presse en agence de communication.
+Tu es un analyste de veille presse.
 
 Client : ${client}
-Contexte client : ${context || "Non précisé"}
+Contexte : ${context || "Non précisé"}
 
 Analyse cette capture d'article de presse.
+Consignes :
+- Sois très concis et synthétique.
+- Si une info est illisible, mets "non détecté".
+- Réponds UNIQUEMENT avec un objet JSON brut, sans texte avant ou après.
 
-Objectifs :
-1. Lire le contenu visible.
-2. Identifier titre, source et date si visibles.
-3. Déterminer le sujet principal.
-4. Produire une synthèse en 3 à 5 lignes maximum.
-5. Évaluer la pertinence pour le client.
-6. Ne jamais inventer d'information absente de l'image.
-7. Si une information est illisible, écrire "non détecté".
-
-Retourne uniquement un JSON valide avec ce format exact :
+Format JSON obligatoire :
 {
- "titre": "",
- "source": "",
- "date": "",
- "sujet": "",
- "resume": "",
- "pertinence_client": "forte|moyenne|faible",
- "angle_client": "",
- "qualite_lecture": "bonne|moyenne|faible",
+ "titre": "titre de l'article",
+ "source": "nom du média",
+ "date": "date ou non détecté",
+ "sujet": "sujet principal en une phrase",
+ "resume": "synthèse en 2 ou 3 phrases courtes",
+ "pertinence_client": "forte",
+ "angle_client": "explication courte",
+ "qualite_lecture": "bonne",
  "points_a_verifier": []
 }
 `;
@@ -64,9 +59,8 @@ Retourne uniquement un JSON valide avec ce format exact :
  },
  body: JSON.stringify({
  model: modelName,
- temperature: 0.2,
- max_completion_tokens: 450, // <-- RÉSOUT LE DÉPASSEMENT OTPM
- response_format: { type: "json_object" },
+ temperature: 0.1,
+ max_completion_tokens: 750,
  messages: [
  {
  role: "user",
@@ -81,7 +75,7 @@ Retourne uniquement un JSON valide avec ce format exact :
 
  groqData = await groqRes.json();
 
- // Si erreur 429 (Rate limit OTPM ou TPM)
+ // Si erreur 429 (Rate limit)
  if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
  if (attempts < maxAttempts) {
  const retryAfter = parseInt(groqRes.headers.get("retry-after") || "5", 10);
@@ -101,7 +95,10 @@ Retourne uniquement un JSON valide avec ce format exact :
  }
 
  const raw = groqData?.choices?.[0]?.message?.content || "{}";
- const cleaned = raw.replace(/```json|```/g, "").trim();
+
+ // Extraction robuste du JSON même si entouré de balises markdown ou de texte
+ let jsonMatch = raw.match(/\{[\s\S]*\}/);
+ let cleaned = jsonMatch ? jsonMatch[0] : raw;
 
  let parsed;
  try {
@@ -112,7 +109,7 @@ Retourne uniquement un JSON valide avec ce format exact :
  source: "non détecté",
  date: "non détecté",
  sujet: "non détecté",
- resume: cleaned,
+ resume: raw.slice(0, 300),
  pertinence_client: "moyenne",
  angle_client: "",
  qualite_lecture: "faible",
