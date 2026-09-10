@@ -1,23 +1,23 @@
 export async function handler(event) {
-  try {
-    if (event.httpMethod !== "POST") {
-      return response(405, { error: "Method not allowed" });
-    }
+ try {
+ if (event.httpMethod !== "POST") {
+ return response(405, { error: "Method not allowed" });
+ }
 
-    const { client, items } = JSON.parse(event.body || "{}");
+ const { client, items } = JSON.parse(event.body || "{}");
 
-    if (!client || !items?.length) {
-      return response(400, { error: "Client et articles requis." });
-    }
+ if (!client || !items?.length) {
+ return response(400, { error: "Client et articles requis." });
+ }
 
-    const clientApiKey = event.headers["x-groq-api-key"] || event.headers["authorization"];
-    const apiKey = clientApiKey ? (clientApiKey.startsWith("Bearer ") ? clientApiKey.substring(7) : clientApiKey) : process.env.GROQ_API_KEY;
+ const clientApiKey = event.headers["x-groq-api-key"] || event.headers["authorization"];
+ const apiKey = clientApiKey ? (clientApiKey.startsWith("Bearer ") ? clientApiKey.substring(7) : clientApiKey) : process.env.GROQ_API_KEY;
 
-    if (!apiKey) {
-      return response(400, { error: "Clé API Groq manquante. Veuillez la configurer dans l'application." });
-    }
+ if (!apiKey) {
+ return response(400, { error: "Clé API Groq manquante. Veuillez la configurer dans l'application." });
+ }
 
-    const prompt = `
+ const prompt = `
 Tu es consultant senior en veille presse.
 
 Client : ${client}
@@ -37,42 +37,51 @@ Articles :
 ${JSON.stringify(items, null, 2)}
 `;
 
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct",
-        temperature: 0.3,
-        messages: [
-          {
-            role: "user",
-            content: prompt
-          }
-        ]
-      })
-    });
+ const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+ method: "POST",
+ headers: {
+ "Authorization": `Bearer ${apiKey}`,
+ "Content-Type": "application/json"
+ },
+ body: JSON.stringify({
+ model: process.env.GROQ_MODEL || "qwen/qwen3.6-27b",
+ temperature: 0.3,
+ messages: [
+ {
+ role: "user",
+ content: prompt
+ }
+ ]
+ })
+ });
 
-    const groqData = await groqRes.json();
-    const newsletter = groqData?.choices?.[0]?.message?.content || "";
+ const groqData = await groqRes.json();
 
-    return response(200, { newsletter });
-  } catch (error) {
-    return response(500, {
-      error: "Erreur newsletter",
-      details: error.message
-    });
-  }
+ // Remonte l'erreur explicite de Groq si l'appel échoue
+ if (groqData.error) {
+ return response(500, {
+ error: "Erreur Groq API",
+ details: groqData.error.message || JSON.stringify(groqData.error)
+ });
+ }
+
+ const newsletter = groqData?.choices?.[0]?.message?.content || "";
+
+ return response(200, { newsletter });
+ } catch (error) {
+ return response(500, {
+ error: "Erreur newsletter",
+ details: error.message
+ });
+ }
 }
 
 function response(statusCode, body) {
-  return {
-    statusCode,
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  };
+ return {
+ statusCode,
+ headers: {
+ "Content-Type": "application/json"
+ },
+ body: JSON.stringify(body)
+ };
 }
