@@ -50,10 +50,9 @@ Retourne uniquement un JSON valide avec ce format exact :
 
  const modelName = process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b";
 
- // Gestion du retry avec délai en cas de Rate Limit (Erreur 429)
  let groqData = null;
  let attempts = 0;
- const maxAttempts = 3;
+ const maxAttempts = 4;
 
  while (attempts < maxAttempts) {
  attempts++;
@@ -81,10 +80,13 @@ Retourne uniquement un JSON valide avec ce format exact :
 
  groqData = await groqRes.json();
 
- // Si erreur de rate limit (429), on attend 2.5 secondes puis on réessaie
+ // Si erreur 429 (Rate limit)
  if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
  if (attempts < maxAttempts) {
- await new Promise((resolve) => setTimeout(resolve, 2500));
+ // Si Groq indique combien de temps attendre (retry-after), on l'utilise, sinon on attend 4s puis 7s
+ const retryAfter = parseInt(groqRes.headers.get("retry-after") || "4", 10);
+ const waitTime = Math.max(retryAfter * 1000, attempts * 3500);
+ await new Promise((resolve) => setTimeout(resolve, waitTime));
  continue;
  }
  }
@@ -92,9 +94,9 @@ Retourne uniquement un JSON valide avec ce format exact :
  }
 
  if (groqData?.error) {
+ const errMsg = groqData.error.message || JSON.stringify(groqData.error);
  return response(500, {
- error: "Erreur Groq API",
- details: groqData.error.message || JSON.stringify(groqData.error)
+ error: `Erreur Groq API: ${errMsg}`
  });
  }
 
@@ -121,8 +123,7 @@ Retourne uniquement un JSON valide avec ce format exact :
  return response(200, parsed);
  } catch (error) {
  return response(500, {
- error: "Erreur analyse",
- details: error.message
+ error: `Erreur analyse: ${error.message}`
  });
  }
 }
