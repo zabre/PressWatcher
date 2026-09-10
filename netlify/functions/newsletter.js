@@ -44,7 +44,7 @@ ${JSON.stringify(items, null, 2)}
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+        model: process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct",,
         temperature: 0.3,
         messages: [
           {
