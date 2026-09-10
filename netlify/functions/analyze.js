@@ -65,6 +65,7 @@ Retourne uniquement un JSON valide avec ce format exact :
  body: JSON.stringify({
  model: modelName,
  temperature: 0.2,
+ max_completion_tokens: 450, // <-- RÉSOUT LE DÉPASSEMENT OTPM
  response_format: { type: "json_object" },
  messages: [
  {
@@ -80,12 +81,11 @@ Retourne uniquement un JSON valide avec ce format exact :
 
  groqData = await groqRes.json();
 
- // Si erreur 429 (Rate limit)
+ // Si erreur 429 (Rate limit OTPM ou TPM)
  if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
  if (attempts < maxAttempts) {
- // Si Groq indique combien de temps attendre (retry-after), on l'utilise, sinon on attend 4s puis 7s
- const retryAfter = parseInt(groqRes.headers.get("retry-after") || "4", 10);
- const waitTime = Math.max(retryAfter * 1000, attempts * 3500);
+ const retryAfter = parseInt(groqRes.headers.get("retry-after") || "5", 10);
+ const waitTime = Math.max(retryAfter * 1000, attempts * 4000);
  await new Promise((resolve) => setTimeout(resolve, waitTime));
  continue;
  }
