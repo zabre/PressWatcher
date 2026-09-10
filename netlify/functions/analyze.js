@@ -17,25 +17,29 @@ export async function handler(event) {
  return response(400, { error: "Clé API Groq manquante. Veuillez la configurer dans l'application." });
  }
 
- const prompt = `Tu es analyste veille presse. Analyse cette image d'article pour le client "${client}".
+ const prompt = `Tu es un analyste de veille presse. Analyse cette capture d'article pour le client "${client}".
 Contexte : ${context || "Non précisé"}.
 
-TÂCHE : Extrais les informations réelles de l'image.
-Réponds EXCLUSIVEMENT avec un JSON brut valide, sans balise de code, sans aucun texte autour :
+Tâches :
+1. Lis attentivement le texte sur l'image.
+2. Identifie le titre réel, la source et la date.
+3. Résume l'article en 2 phrases concises.
+4. Évalue la pertinence (forte, moyenne ou faible).
+
+Réponds UNIQUEMENT avec un objet JSON brut valide, sans balises markdown :
 {
- "titre": "vrai titre extrait de l'article",
- "source": "nom du média ou non détecté",
- "date": "date ou non détecté",
- "sujet": "sujet principal",
- "resume": "résumé en 2 phrases simples",
- "pertinence_client": "forte",
- "angle_client": "explication courte",
- "qualite_lecture": "bonne",
+ "titre": "",
+ "source": "",
+ "date": "",
+ "sujet": "",
+ "resume": "",
+ "pertinence_client": "forte|moyenne|faible",
+ "angle_client": "",
+ "qualite_lecture": "bonne|moyenne|faible",
  "points_a_verifier": []
 }`;
 
- // meta-llama/llama-4-scout-17b-16e-instruct : Pas de pensées <think>, pas de tronquage
- const modelName = "meta-llama/llama-4-scout-17b-16e-instruct";
+ const modelName = "qwen/qwen3.6-27b";
 
  let groqData = null;
  let attempts = 0;
@@ -52,6 +56,9 @@ Réponds EXCLUSIVEMENT avec un JSON brut valide, sans balise de code, sans aucun
  body: JSON.stringify({
  model: modelName,
  temperature: 0.1,
+ reasoning_effort: "none", // DÉSACTIVE TOTALEMENT LE MODE <think>
+ reasoning_format: "hidden", // MASQUE LES PENSÉES
+ response_format: { type: "json_object" }, // FORCE UN JSON STRICT ET VALIDE
  messages: [
  {
  role: "user",
@@ -66,9 +73,11 @@ Réponds EXCLUSIVEMENT avec un JSON brut valide, sans balise de code, sans aucun
 
  groqData = await groqRes.json();
 
+ // Gestion du Rate Limit (429) avec attente dynamique
  if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
  if (attempts < maxAttempts) {
- await new Promise((resolve) => setTimeout(resolve, 3000));
+ const retryAfter = parseInt(groqRes.headers.get("retry-after") || "4", 10);
+ await new Promise((resolve) => setTimeout(resolve, Math.max(retryAfter * 1000, 3500)));
  continue;
  }
  }
@@ -82,11 +91,8 @@ Réponds EXCLUSIVEMENT avec un JSON brut valide, sans balise de code, sans aucun
  }
 
  let raw = groqData?.choices?.[0]?.message?.content || "{}";
+ raw = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/```json/gi, "").replace(/```/g, "").trim();
 
- // Nettoyage Markdown
- raw = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
-
- // Extraction du JSON
  const firstBrace = raw.indexOf("{");
  const lastBrace = raw.lastIndexOf("}");
  let cleaned = (firstBrace !== -1 && lastBrace !== -1) ? raw.substring(firstBrace, lastBrace + 1) : raw;
