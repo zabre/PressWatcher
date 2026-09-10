@@ -37,6 +37,15 @@ Articles :
 ${JSON.stringify(items, null, 2)}
 `;
 
+ // Utilisation de llama-3.1-8b-instant pour éviter les rate limits du tier gratuit
+ const modelName = process.env.GROQ_TEXT_MODEL || "llama-3.1-8b-instant";
+
+ let groqData = null;
+ let attempts = 0;
+ const maxAttempts = 3;
+
+ while (attempts < maxAttempts) {
+ attempts++;
  const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
  method: "POST",
  headers: {
@@ -44,7 +53,7 @@ ${JSON.stringify(items, null, 2)}
  "Content-Type": "application/json"
  },
  body: JSON.stringify({
- model: process.env.GROQ_MODEL || "qwen/qwen3.6-27b",
+ model: modelName,
  temperature: 0.3,
  messages: [
  {
@@ -55,10 +64,18 @@ ${JSON.stringify(items, null, 2)}
  })
  });
 
- const groqData = await groqRes.json();
+ groqData = await groqRes.json();
 
- // Remonte l'erreur explicite de Groq si l'appel échoue
- if (groqData.error) {
+ if (groqRes.status === 429 || groqData?.error?.code === "rate_limit_exceeded") {
+ if (attempts < maxAttempts) {
+ await new Promise((resolve) => setTimeout(resolve, 2000));
+ continue;
+ }
+ }
+ break;
+ }
+
+ if (groqData?.error) {
  return response(500, {
  error: "Erreur Groq API",
  details: groqData.error.message || JSON.stringify(groqData.error)
